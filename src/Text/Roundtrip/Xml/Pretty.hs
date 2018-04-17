@@ -4,6 +4,8 @@ module Text.Roundtrip.Xml.Pretty (
 
 ) where
 
+import Prelude hiding ((<>))
+
 import qualified Data.Text as T
 
 import Data.XML.Types

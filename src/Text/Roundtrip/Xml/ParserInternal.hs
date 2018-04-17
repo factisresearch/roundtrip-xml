@@ -7,6 +7,8 @@ module Text.Roundtrip.Xml.ParserInternal (
 
 ) where
 
+import Prelude hiding ((<>))
+
 import Data.XML.Types
 import qualified Data.Text as T
 
