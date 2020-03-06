@@ -71,13 +71,13 @@ runXmlParserGen p src er items gen =
       Right events -> runXmlParser p src er events
 
 runXmlParserString :: XmlParser a -> SourceName -> EntityRenderer -> String -> (Either ParseError a)
-runXmlParserString p src e str = runXmlParserGen p src e [T.pack str] CXP.parseText'
+runXmlParserString p src e str = runXmlParserGen p src e [T.pack str] CXP.parseText
 
 runXmlParserText :: XmlParser a -> SourceName -> EntityRenderer -> T.Text -> (Either ParseError a)
-runXmlParserText p src e t = runXmlParserGen p src e [t] CXP.parseText'
+runXmlParserText p src e t = runXmlParserGen p src e [t] CXP.parseText
 
 runXmlParserLazyText :: XmlParser a -> SourceName -> EntityRenderer -> TL.Text -> (Either ParseError a)
-runXmlParserLazyText p src e t = runXmlParserGen p src e (TL.toChunks t) CXP.parseText'
+runXmlParserLazyText p src e t = runXmlParserGen p src e (TL.toChunks t) CXP.parseText
 
 runXmlParserByteString :: XmlParser a -> SourceName -> EntityRenderer -> BS.ByteString -> (Either ParseError a)
 runXmlParserByteString p src e bs = runXmlParserGen p src e [bs] CXP.parseBytes
