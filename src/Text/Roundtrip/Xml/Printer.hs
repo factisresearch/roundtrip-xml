@@ -36,7 +36,7 @@ import Numeric (showHex)
 
 data PxEvent = XmlTypesEvent Event
              | PxBeginElement Name
-             | PxAttribute Name T.Text
+             | PxAttribute Name [Content]
                deriving (Show)
 
 -- FIXME: don't use lists for  collecting the events, this makes an inefficient
@@ -123,9 +123,9 @@ runXmlPrinter (XmlPrinter (Printer p)) x =
       convAttrs :: [PxEvent] -> ([(Name, [Content])], [PxEvent])
       convAttrs pxes =
           case pxes of
-            PxAttribute name t : rest ->
+            PxAttribute name content : rest ->
                 let (attrs, nonAttrs) = convAttrs rest
-                in ((name, [ContentText t]) : attrs, nonAttrs)
+                in ((name, content) : attrs, nonAttrs)
             _ -> ([], pxes)
 
 instance XmlSyntax XmlPrinter where
@@ -152,7 +152,7 @@ xmlPrinterEndElem :: Name -> XmlPrinter ()
 xmlPrinterEndElem name = mkXmlPrinter $ \() -> [XmlTypesEvent (EventEndElement name)]
 
 xmlPrinterAttrValue :: Name -> XmlPrinter T.Text
-xmlPrinterAttrValue aName = mkXmlPrinter $ \value -> [PxAttribute aName value]
+xmlPrinterAttrValue aName = mkXmlPrinter $ \value -> [PxAttribute aName (textContent value)]
 
 -- xml-conduit fixed the handling of trailing newlines in version 1.9.1.2 by turning
 -- \r\n and \r into \n. See https://www.w3.org/TR/REC-xml/#sec-line-ends
@@ -160,10 +160,10 @@ xmlPrinterAttrValue aName = mkXmlPrinter $ \value -> [PxAttribute aName value]
 xmlPrinterTextNotEmpty :: XmlPrinter T.Text
 xmlPrinterTextNotEmpty =
     mkXmlPrinter $ \value ->
-        map (XmlTypesEvent . EventContent) (splitContent value)
+        map (XmlTypesEvent . EventContent) (textContent value)
 
-splitContent :: T.Text -> [Content]
-splitContent t =
+textContent :: T.Text -> [Content]
+textContent t =
     if T.null t
         then []
         else let (pref, suf) = T.span needsNoEntity t
@@ -176,5 +176,5 @@ splitContent t =
         handleLeadingEntity t =
             if T.null t
                 then []
-                else encodeEntity (T.head t) : splitContent (T.tail t)
+                else encodeEntity (T.head t) : textContent (T.tail t)
         encodeEntity c = ContentEntity (T.pack ('#' : 'x' : showHex (ord c) ""))
