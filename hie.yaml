@@ -1,0 +1,7 @@
+cradle:
+  cabal:
+    - path: "tests"
+      component: "roundtrip-xml:test:tests"
+
+    - path: "src"
+      component: "lib:roundtrip-xml"

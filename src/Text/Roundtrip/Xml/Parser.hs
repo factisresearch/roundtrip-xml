@@ -16,32 +16,19 @@ module Text.Roundtrip.Xml.Parser (
 
 import Prelude hiding ((*>),(<*))
 
-import Control.Monad (unless, foldM)
-import Control.Monad.State
-import Control.Monad.Identity (Identity, runIdentity)
-import Control.Exception (ErrorCall(..), SomeException, Exception, toException)
-
+import Control.Monad (unless)
+import Control.Monad.Identity (Identity)
+import Control.Exception (SomeException)
 import qualified Data.Conduit as C
 import qualified Data.Conduit.List as CL
 import qualified Text.XML.Stream.Parse as CXP
-import qualified Data.Map as Map
-import Data.Map (Map)
 import qualified Data.List as List
-import Data.Typeable (Typeable)
 import Data.Either (partitionEithers)
-
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy as BSL
 import qualified Data.Text as T
 import qualified Data.Text.Lazy as TL
-
-
-import qualified Debug.Trace
-
-import qualified Text.PrettyPrint.HughesPJ as Pp
-
 import Data.XML.Types
-
 import Text.Roundtrip
 import Text.Roundtrip.Parser
 import Text.Roundtrip.Xml.ParserInternal
@@ -54,49 +41,49 @@ defaultEntityRenderer = const Nothing
 
 type XmlParser a = GenXmlParser [RtEventWithPos] Identity a
 
-type EventGen a = CXP.ParseSettings -> C.Conduit a (Either SomeException) Event
+type EventGen a = CXP.ParseSettings -> C.ConduitT a Event (Either SomeException) ()
 
 genEvents :: [a] -> EventGen a -> Either SomeException [Event]
 genEvents items f =
-    CL.sourceList items C.=$= f CXP.def C.$$ CL.consume
+    C.runConduit (CL.sourceList items C..| f CXP.def C..| CL.consume)
 
 -- Parsing a string/text/bytestring into a list of events into is done via
 -- enumerators. This is not optimal because the resulting list is too strict.
 -- However, currently no other functions exists for such a conversion.
 
-runXmlParserGen :: XmlParser a -> SourceName -> EntityRenderer -> [b] -> EventGen b -> (Either ParseError a)
+runXmlParserGen :: XmlParser a -> SourceName -> EntityRenderer -> [b] -> EventGen b -> Either ParseError a
 runXmlParserGen p src er items gen =
     case genEvents items gen of
       Left err -> Left $ mkParseError (initialPos src) (show err)
       Right events -> runXmlParser p src er events
 
-runXmlParserString :: XmlParser a -> SourceName -> EntityRenderer -> String -> (Either ParseError a)
+runXmlParserString :: XmlParser a -> SourceName -> EntityRenderer -> String -> Either ParseError a
 runXmlParserString p src e str = runXmlParserGen p src e [T.pack str] CXP.parseText
 
-runXmlParserText :: XmlParser a -> SourceName -> EntityRenderer -> T.Text -> (Either ParseError a)
+runXmlParserText :: XmlParser a -> SourceName -> EntityRenderer -> T.Text -> Either ParseError a
 runXmlParserText p src e t = runXmlParserGen p src e [t] CXP.parseText
 
-runXmlParserLazyText :: XmlParser a -> SourceName -> EntityRenderer -> TL.Text -> (Either ParseError a)
+runXmlParserLazyText :: XmlParser a -> SourceName -> EntityRenderer -> TL.Text -> Either ParseError a
 runXmlParserLazyText p src e t = runXmlParserGen p src e (TL.toChunks t) CXP.parseText
 
-runXmlParserByteString :: XmlParser a -> SourceName -> EntityRenderer -> BS.ByteString -> (Either ParseError a)
+runXmlParserByteString :: XmlParser a -> SourceName -> EntityRenderer -> BS.ByteString -> Either ParseError a
 runXmlParserByteString p src e bs = runXmlParserGen p src e [bs] CXP.parseBytes
 
-runXmlParserLazyByteString :: XmlParser a -> SourceName -> EntityRenderer -> BSL.ByteString -> (Either ParseError a)
+runXmlParserLazyByteString :: XmlParser a -> SourceName -> EntityRenderer -> BSL.ByteString -> Either ParseError a
 runXmlParserLazyByteString p src e bs = runXmlParserGen p src e (BSL.toChunks bs) CXP.parseBytes
 
-runXmlParser :: XmlParser a -> SourceName -> EntityRenderer -> [Event] -> (Either ParseError a)
+runXmlParser :: XmlParser a -> SourceName -> EntityRenderer -> [Event] -> Either ParseError a
 runXmlParser p sourceName renderer events =
     runXmlParser'' p sourceName renderer (map eventWithoutPos events)
 
-runXmlParser' :: XmlParser a -> EntityRenderer -> [EventWithPos] -> (Either ParseError a)
+runXmlParser' :: XmlParser a -> EntityRenderer -> [EventWithPos] -> Either ParseError a
 runXmlParser' p renderer events = runXmlParser'' p src renderer events
     where
       src = case events of
               [] -> ""
               (e:_) -> sourceName (wp_pos e)
 
-runXmlParser'' :: XmlParser a -> SourceName -> EntityRenderer -> [EventWithPos] -> (Either ParseError a)
+runXmlParser'' :: XmlParser a -> SourceName -> EntityRenderer -> [EventWithPos] -> Either ParseError a
 runXmlParser'' p sourceName entityRenderer events =
     let GenXmlParser q = xmlBeginDoc *> p <* xmlEndDoc
         rtEvents = List.unfoldr (simplifyEvents entityRenderer) events
@@ -127,6 +114,8 @@ simplifyEvents renderEntity evs = go evs
                    Right as' ->  as' `seq` Just (WithPos (RtBeginElement n (reverse as')) pos, rest)
                    Left t -> Just (WithPos (RtInvalidEntity t) pos, [])
           (WithPos (EventEndElement n) pos : rest) -> Just (WithPos (RtEndElement n) pos, rest)
+          (WithPos (EventCDATA t) pos : rest) ->
+            go (WithPos (EventContent (ContentText t)) pos : rest)
           (WithPos (EventContent c) pos : rest) ->
               case contentToText c of
                 Left t -> Just (WithPos (RtInvalidEntity t) pos, [])
@@ -139,7 +128,7 @@ simplifyEvents renderEntity evs = go evs
                                            then go rest'
                                            else Just (WithPos (RtText text) pos, rest')
           (WithPos (EventComment _) _ : rest) -> go rest
-      splitContent (WithPos (EventContent c) pos : rest) =
+      splitContent (WithPos (EventContent c) _pos : rest) =
           let (cs, rest') = splitContent rest
           in (c:cs, rest')
       splitContent l = ([], l)
@@ -151,13 +140,13 @@ simplifyEvents renderEntity evs = go evs
                   Just t' -> Right t'
                   Nothing -> Left t
 
-instance (Monad m, Stream s m RtEventWithPos) => IsoFunctor (GenXmlParser s m) where
+instance (Stream s m RtEventWithPos) => IsoFunctor (GenXmlParser s m) where
     iso <$> (GenXmlParser p) = GenXmlParser $ parsecApply iso p
 
-instance (Monad m, Stream s m RtEventWithPos) => ProductFunctor (GenXmlParser s m) where
+instance (Stream s m RtEventWithPos) => ProductFunctor (GenXmlParser s m) where
     (GenXmlParser p) <*> (GenXmlParser q) = GenXmlParser $ parsecConcat p q
 
-instance (Monad m, Stream s m RtEventWithPos) => Alternative (GenXmlParser s m) where
+instance (Stream s m RtEventWithPos) => Alternative (GenXmlParser s m) where
     GenXmlParser p <|> GenXmlParser q = GenXmlParser $ parsecAlternative1Lookahead p q
     GenXmlParser p <||> GenXmlParser q = GenXmlParser $ parsecAlternativeInfLookahead p q
     empty = GenXmlParser parsecEmpty
@@ -173,7 +162,7 @@ instance (Monad m, Stream s m RtEventWithPos) => XmlSyntax (GenXmlParser s m) wh
     xmlTextNotEmpty = GenXmlParser xmlParserTextNotEmpty
     xmlEndElem = GenXmlParser . xmlParserEndElem
 
-matchEvent :: (Show a, Monad m, Stream s m RtEventWithPos)
+matchEvent :: (Show a, Stream s m RtEventWithPos)
            => (RtEvent -> Maybe a) -> String -> PxParser s m a
 matchEvent matcher desc =
     do state <- getState
@@ -185,28 +174,27 @@ matchEvent matcher desc =
          let res = matcher (wp_data ev)
          in ("matching " ++ show ev ++ " against " ++ desc ++ ", result: " ++ show res) `debug` res
 
-mkPxParser :: Monad m => String -> PxParser s m a -> PxParser s m a
-mkPxParser msg p = (p <?> msg)
+mkPxParser :: String -> PxParser s m a -> PxParser s m a
+mkPxParser msg p = p <?> msg
 
-xmlParserBeginDoc :: (Monad m, Stream s m RtEventWithPos) => PxParser s m ()
+xmlParserBeginDoc :: (Stream s m RtEventWithPos) => PxParser s m ()
 xmlParserBeginDoc = mkPxParser "begin-document" $
     let f RtBeginDocument = Just ()
         f _ = Nothing
     in matchEvent f "begin-document"
 
-xmlParserEndDoc :: (Monad m, Stream s m RtEventWithPos) => PxParser s m ()
+xmlParserEndDoc :: (Stream s m RtEventWithPos) => PxParser s m ()
 xmlParserEndDoc = mkPxParser "end-document" $
     let f RtEndDocument = Just ()
         f _ = Nothing
     in matchEvent f "end-document"
 
-xmlParserBeginElem :: (Monad m, Stream s m RtEventWithPos) => Name -> PxParser s m ()
+xmlParserBeginElem :: (Stream s m RtEventWithPos) => Name -> PxParser s m ()
 xmlParserBeginElem name = mkPxParser ("<" ++ ppStr name ++ " ...>") $
     do let f (RtBeginElement name' attrs) | name == name' = Just attrs
            f _ = Nothing
        attrs <- matchEvent f ("begin-element " ++ ppStr name)
        unless (null attrs) (putStateDebug $ Just attrs)
-       return ()
 
 xmlParserAttrValue :: Monad m => Name -> PxParser s m T.Text
 xmlParserAttrValue name = mkPxParser ("attribute " ++ ppStr name) $
@@ -223,19 +211,20 @@ xmlParserAttrValue name = mkPxParser ("attribute " ++ ppStr name) $
                       return t
                _ -> parserZero
 
-xmlParserEndElem :: (Monad m, Stream s m RtEventWithPos) => Name -> PxParser s m ()
+xmlParserEndElem :: (Stream s m RtEventWithPos) => Name -> PxParser s m ()
 xmlParserEndElem name = mkPxParser ("</" ++ ppStr name ++ ">") $
     let f (RtEndElement name') | name == name' = Just ()
         f _ = Nothing
     in matchEvent f ("end-element " ++ ppStr name)
 
-xmlParserTextNotEmpty :: (Monad m, Stream s m RtEventWithPos) => PxParser s m T.Text
+xmlParserTextNotEmpty :: (Stream s m RtEventWithPos) => PxParser s m T.Text
 xmlParserTextNotEmpty = mkPxParser "text node" $
     let f (RtText t) = Just t
         f _ = Nothing
     in matchEvent f "text node"
 
--- debug = Debug.Trace.trace
+debug :: a -> b -> b
 debug _ x = x
 
+putStateDebug :: (Show u, Monad m) => u -> ParsecT s u m ()
 putStateDebug x = ("setting state to " ++ show x) `debug` putState x

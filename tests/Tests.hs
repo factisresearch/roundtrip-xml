@@ -1,7 +1,7 @@
 {-# OPTIONS_GHC -F -pgmF htfpp #-}
 {-# LANGUAGE OverloadedStrings, RankNTypes, TemplateHaskell #-}
 
-import Control.Exception (throw)
+import Prelude hiding ((<$>), (<*>), (<*))
 import System.Environment (getArgs)
 import System.FilePath
 import Control.Monad (liftM2)
@@ -20,6 +20,7 @@ import Text.Roundtrip.Xml
 
 import Test.Framework
 import Test.Framework.TestManager
+import qualified Data.XML.Types as X
 
 --
 -- Specification for expressions
@@ -206,8 +207,7 @@ checkRoundtrip spec val =
                    else error (show val ++ " /= " ++ show val')
             Left err -> error ("Parsing of " ++ show t ++ " failed: " ++ show err)
 
-parseFromFile :: (Eq a, Show a)
-              => FilePath -> (forall d . XmlSyntax d => d a) -> IO a
+parseFromFile :: FilePath -> (forall d . XmlSyntax d => d a) -> IO a
 parseFromFile fname p =
     do bs <- BS.readFile fname
        case runXmlParserByteString p fname defaultEntityRenderer bs of

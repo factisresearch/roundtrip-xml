@@ -1,4 +1,4 @@
-{-# LANGUAGE OverloadedStrings, BangPatterns #-}
+{-# LANGUAGE OverloadedStrings #-}
 module Text.Roundtrip.Xml.Printer (
 
     XmlPrinter, runXmlPrinter,
@@ -9,7 +9,6 @@ module Text.Roundtrip.Xml.Printer (
 
 ) where
 
-import Control.Monad (mplus, liftM2)
 import Control.Monad.Except
 import Control.Monad.Identity
 import Control.Exception (SomeException)
@@ -42,7 +41,7 @@ data PxEvent = XmlTypesEvent Event
 -- FIXME: don't use lists for  collecting the events, this makes an inefficient
 -- monoid. Better use Data.Sequence?!
 
-newtype XmlPrinter a = XmlPrinter { unXmlPrinter :: Printer Identity [PxEvent] a }
+newtype XmlPrinter a = XmlPrinter { _unXmlPrinter :: Printer Identity [PxEvent] a }
 
 instance IsoFunctor XmlPrinter where
     iso <$> (XmlPrinter p) = XmlPrinter $ iso `printerApply` p

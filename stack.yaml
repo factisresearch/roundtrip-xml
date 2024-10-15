@@ -1,0 +1,14 @@
+# See https://github.com/commercialhaskell/stack/wiki/stack.yaml for a documentation
+# on the format of this file.
+
+packages:
+- '.'
+
+resolver: lts-22.32
+allow-newer: true
+require-stack-version: ">= 1.7.1"
+
+extra-deps:
+- roundtrip-string-0.1.0.1
+- git: https://github.com/factisresearch/roundtrip.git
+  commit: ab031177ca64814bd2a7ee9fbd2a82f984ae7507

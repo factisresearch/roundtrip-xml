@@ -46,6 +46,8 @@ instance Pretty RtEvent where
         where shorten n t | T.length t <= n = text (T.unpack t)
                           | otherwise = text (T.unpack (T.take n t)) <+> text "..."
     pp  (RtEndElement n) = text "</" <> pp n <> text ">"
+    pp (RtInvalidEntity e) =
+        text "invalid-entity" <> parens (text (T.unpack e))
 
 instance Show RtEvent where
     showsPrec _ ev = showString (render (pp ev))
