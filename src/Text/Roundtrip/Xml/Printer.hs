@@ -26,12 +26,13 @@ import qualified Text.XML.Stream.Render as CXR
 
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy as BSL
-
+import Data.Char (ord)
 import Data.XML.Types
 
 import Control.Isomorphism.Partial
 import Text.Roundtrip
 import Text.Roundtrip.Printer
+import Numeric (showHex)
 
 data PxEvent = XmlTypesEvent Event
              | PxBeginElement Name
@@ -151,10 +152,29 @@ xmlPrinterEndElem :: Name -> XmlPrinter ()
 xmlPrinterEndElem name = mkXmlPrinter $ \() -> [XmlTypesEvent (EventEndElement name)]
 
 xmlPrinterAttrValue :: Name -> XmlPrinter T.Text
-xmlPrinterAttrValue aName = mkXmlPrinter $ \value -> [(PxAttribute aName value)]
+xmlPrinterAttrValue aName = mkXmlPrinter $ \value -> [PxAttribute aName value]
 
+-- xml-conduit fixed the handling of trailing newlines in version 1.9.1.2 by turning
+-- \r\n and \r into \n. See https://www.w3.org/TR/REC-xml/#sec-line-ends
+-- Thus, we represent certain characters as entities.
 xmlPrinterTextNotEmpty :: XmlPrinter T.Text
-xmlPrinterTextNotEmpty = mkXmlPrinter $ \value ->
-                         if T.null value
-                            then []
-                            else [XmlTypesEvent $ EventContent (ContentText value)]
+xmlPrinterTextNotEmpty =
+    mkXmlPrinter $ \value ->
+        map (XmlTypesEvent . EventContent) (splitContent value)
+
+splitContent :: T.Text -> [Content]
+splitContent t =
+    if T.null t
+        then []
+        else let (pref, suf) = T.span needsNoEntity t
+             in if T.null pref
+                    then handleLeadingEntity suf
+                    else ContentText pref : handleLeadingEntity suf
+    where
+        entities = ['\t', '\n', '\r']
+        needsNoEntity c = c `notElem` entities
+        handleLeadingEntity t =
+            if T.null t
+                then []
+                else encodeEntity (T.head t) : splitContent (T.tail t)
+        encodeEntity c = ContentEntity (T.pack ('#' : 'x' : showHex (ord c) ""))

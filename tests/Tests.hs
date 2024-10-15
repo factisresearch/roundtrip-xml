@@ -84,6 +84,33 @@ prop_exprPrinterParserInverse expr =
          Left err -> error (show err)
          Right expr' -> expr == expr'
 
+roundtripText :: T.Text -> Either String T.Text
+roundtripText t =
+  case runXmlPrinterByteString pickleText t of
+    Nothing -> Left ("Cannot serialize " ++ show t)
+    Just bs ->
+      case runXmlParserByteString pickleText "<string>" defaultEntityRenderer bs of
+        Left err -> Left (show err)
+        Right x -> Right x
+  where
+    pickleText :: XmlSyntax s => s T.Text
+    pickleText = xmlElem (X.Name (T.pack "content") Nothing Nothing) xmlText
+
+textTest :: T.Text -> IO ()
+textTest t =
+  case roundtripText t of
+    Left err -> fail err
+    Right parsed ->
+        assertEqualVerbose ("t=" ++ show t ++ ", parsed=" ++ show parsed) t parsed
+
+test_parseText :: IO ()
+test_parseText = do
+  textTest (T.pack "a\r\nz")
+  textTest (T.pack "a\nz")
+  textTest (T.pack "a\r1\r2\r\n3\rz")
+
+prop_text :: T.Text -> Bool
+prop_text t = roundtripText t == (Right (T.strip t))
 
 --
 -- Parsing, invalid lookahead, David, 2011-07-23

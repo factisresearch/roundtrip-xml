@@ -1,4 +1,6 @@
 {-# LANGUAGE FlexibleContexts, UndecidableInstances #-}
+-- | Module for running an XML parser constructed via roundtrip.
+-- NOTE: the parser does not preserve leading and trailing whitespace!
 module Text.Roundtrip.Xml.Parser (
 
     GenXmlParser, XmlParser, runXmlParser, runXmlParser', runXmlParser''
