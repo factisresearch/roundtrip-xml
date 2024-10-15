@@ -67,7 +67,9 @@ runXmlPrinterGen p x run render =
     case runXmlPrinter p x of
       Nothing -> Nothing
       Just l ->
-          case run $ runExceptT $ CL.sourceList l C.=$= render CXR.def C.$$ CL.consume of
+          case
+            run $ runExceptT $ C.runConduit $ CL.sourceList l C..| render CXR.def C..| CL.consume
+          of
             Left _ -> Nothing
             Right t -> Just t
 

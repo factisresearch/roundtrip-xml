@@ -151,10 +151,10 @@ instance (Stream s m RtEventWithPos) => Alternative (GenXmlParser s m) where
     GenXmlParser p <||> GenXmlParser q = GenXmlParser $ parsecAlternativeInfLookahead p q
     empty = GenXmlParser parsecEmpty
 
-instance (Monad m, Stream s m RtEventWithPos) => Syntax (GenXmlParser s m) where
+instance (Stream s m RtEventWithPos) => Syntax (GenXmlParser s m) where
     pure x = GenXmlParser (parsecPure x)
 
-instance (Monad m, Stream s m RtEventWithPos) => XmlSyntax (GenXmlParser s m) where
+instance (Stream s m RtEventWithPos) => XmlSyntax (GenXmlParser s m) where
     xmlBeginDoc = GenXmlParser xmlParserBeginDoc
     xmlEndDoc = GenXmlParser xmlParserEndDoc
     xmlBeginElem = GenXmlParser . xmlParserBeginElem
@@ -223,7 +223,7 @@ xmlParserTextNotEmpty = mkPxParser "text node" $
         f _ = Nothing
     in matchEvent f "text node"
 
-debug :: a -> b -> b
+debug :: String -> b -> b
 debug _ x = x
 
 putStateDebug :: (Show u, Monad m) => u -> ParsecT s u m ()
