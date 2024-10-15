@@ -33,6 +33,7 @@ import Text.Roundtrip
 import Text.Roundtrip.Parser
 import Text.Roundtrip.Xml.ParserInternal
 import Text.Roundtrip.Xml.Pretty
+-- import Debug.Trace (trace)
 
 type EntityRenderer = T.Text -> Maybe T.Text
 
@@ -55,7 +56,7 @@ runXmlParserGen :: XmlParser a -> SourceName -> EntityRenderer -> [b] -> EventGe
 runXmlParserGen p src er items gen =
     case genEvents items gen of
       Left err -> Left $ mkParseError (initialPos src) (show err)
-      Right events -> runXmlParser p src er events
+      Right events -> debug (show events) $ runXmlParser p src er events
 
 runXmlParserString :: XmlParser a -> SourceName -> EntityRenderer -> String -> Either ParseError a
 runXmlParserString p src e str = runXmlParserGen p src e [T.pack str] CXP.parseText
@@ -87,7 +88,7 @@ runXmlParser'' :: XmlParser a -> SourceName -> EntityRenderer -> [EventWithPos] 
 runXmlParser'' p sourceName entityRenderer events =
     let GenXmlParser q = xmlBeginDoc *> p <* xmlEndDoc
         rtEvents = List.unfoldr (simplifyEvents entityRenderer) events
-    in runParser q Nothing sourceName rtEvents
+    in debug (show rtEvents) $ runParser q Nothing sourceName rtEvents
 
 simplifyEvents :: EntityRenderer -> [EventWithPos] -> Maybe (RtEventWithPos, [EventWithPos])
 simplifyEvents renderEntity evs = go evs
