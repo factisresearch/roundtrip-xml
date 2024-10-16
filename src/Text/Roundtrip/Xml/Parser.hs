@@ -35,7 +35,6 @@ import Text.Roundtrip
 import Text.Roundtrip.Parser
 import Text.Roundtrip.Xml.ParserInternal
 import Text.Roundtrip.Xml.Pretty
--- import Debug.Trace (trace)
 
 type EntityRenderer = T.Text -> Maybe T.Text
 
