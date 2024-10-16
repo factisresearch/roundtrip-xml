@@ -1,10 +1,11 @@
 {-# OPTIONS_GHC -F -pgmF htfpp #-}
 {-# LANGUAGE OverloadedStrings, RankNTypes, TemplateHaskell #-}
+module Main where
 
-import Control.Exception (throw)
+import Prelude hiding ((<$>), (<*>), (<*))
 import System.Environment (getArgs)
 import System.FilePath
-import Control.Monad (liftM2)
+import Control.Monad (liftM2, forM_)
 import Data.Maybe (isJust, fromJust)
 
 import qualified Data.ByteString as BS
@@ -20,6 +21,7 @@ import Text.Roundtrip.Xml
 
 import Test.Framework
 import Test.Framework.TestManager
+import qualified Data.XML.Types as X
 
 --
 -- Specification for expressions
@@ -83,6 +85,48 @@ prop_exprPrinterParserInverse expr =
          Left err -> error (show err)
          Right expr' -> expr == expr'
 
+data StorageKind = Elem | Attr
+  deriving (Eq, Show)
+
+roundtripText :: StorageKind -> T.Text -> Either String T.Text
+roundtripText kind t =
+  case runXmlPrinterByteString pickleText t of
+    Nothing -> Left ("Cannot serialize " ++ show t)
+    Just bs ->
+      case runXmlParserByteString pickleText "<string>" defaultEntityRenderer bs of
+        Left err -> Left (show err)
+        Right x -> Right x
+  where
+    pickleText :: XmlSyntax s => s T.Text
+    pickleText =
+      case kind of
+        Attr -> xmlElem (X.Name (T.pack "content") Nothing Nothing) (xmlAttrValue "data")
+        Elem -> xmlElem (X.Name (T.pack "content") Nothing Nothing) xmlText
+
+textTest :: StorageKind -> T.Text -> IO ()
+textTest kind t =
+  case roundtripText kind t of
+    Left err -> fail err
+    Right parsed ->
+        assertEqualVerbose ("kind=" ++ show kind ++ ", t=" ++ show t ++ ", parsed=" ++ show parsed) t parsed
+
+test_parseText :: IO ()
+test_parseText = do
+  forM_ [Elem, Attr] $ \kind -> do
+    subAssert $ textTest kind (T.pack "a\r\nz")
+    subAssert $ textTest kind (T.pack "a\nz")
+    subAssert $ textTest kind (T.pack "a\r1\r2\r\n3\rz")
+    subAssert $ textTest kind (T.pack "q4Y\21099\rk\1081602#")
+    subAssert $ textTest kind (T.pack "q4Y\21099\nk\1081602#")
+  textTest Attr (T.pack "\r\n")
+  textTest Attr (T.pack "\r")
+  textTest Attr (T.pack "\n")
+
+prop_textElem :: T.Text -> Bool
+prop_textElem t = roundtripText Elem t == Right (T.strip t)
+
+prop_textAttr :: T.Text -> Bool
+prop_textAttr t = roundtripText Attr t == Right (T.strip t)
 
 --
 -- Parsing, invalid lookahead, David, 2011-07-23
@@ -206,8 +250,7 @@ checkRoundtrip spec val =
                    else error (show val ++ " /= " ++ show val')
             Left err -> error ("Parsing of " ++ show t ++ " failed: " ++ show err)
 
-parseFromFile :: (Eq a, Show a)
-              => FilePath -> (forall d . XmlSyntax d => d a) -> IO a
+parseFromFile :: FilePath -> (forall d . XmlSyntax d => d a) -> IO a
 parseFromFile fname p =
     do bs <- BS.readFile fname
        case runXmlParserByteString p fname defaultEntityRenderer bs of

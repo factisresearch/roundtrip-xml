@@ -19,29 +19,21 @@ Source-repository head
   Type:     darcs
   location: http://darcs.factisresearch.com/pub/roundtrip-xml
 
-Flag tests
-  description: Build test suite
-  default:     False
-
-Flag oldmtl
-  description: Use mtl < 2.2
-  default:     False
-
-Executable tests
-  If flag(tests)
-    Build-Depends:
-        base >= 4 && < 5
-      , HTF
-      , filepath
-      , text
-      , bytestring
-      , roundtrip
-      , roundtrip-string
-      , roundtrip-xml
-  Else
-    Buildable: False
+Test-suite tests
+  type:           exitcode-stdio-1.0
+  Build-Depends:
+      base >= 4 && < 5
+    , HTF
+    , filepath
+    , text
+    , bytestring
+    , roundtrip
+    , roundtrip-string
+    , roundtrip-xml
+    , xml-types
   Hs-Source-Dirs: tests
   Main-Is:        Tests.hs
+  ghc-options: -Werror -W -fwarn-unused-imports -fwarn-unused-binds -fwarn-unused-matches -fwarn-unused-do-bind -fwarn-wrong-do-bind -fno-warn-partial-type-signatures -Wredundant-constraints -Wno-missed-extra-shared-lib -fwrite-ide-info
 
 Library
   Hs-Source-Dirs: src
@@ -67,8 +59,6 @@ Library
     , pretty
     , roundtrip
     , roundtrip-string
-  if flag(oldmtl)
-    Build-depends: mtl < 2.2, mtl-compat >= 0.2
-  else
-    Build-depends: mtl >= 2.2
+    , mtl >= 2.2
+  ghc-options: -Werror -W -fwarn-unused-imports -fwarn-unused-binds -fwarn-unused-matches -fwarn-unused-do-bind -fwarn-wrong-do-bind -fwarn-missing-signatures -fno-warn-partial-type-signatures -Wredundant-constraints -Wno-missed-extra-shared-lib -fwrite-ide-info
 

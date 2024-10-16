@@ -1,4 +1,4 @@
-{-# LANGUAGE OverloadedStrings, BangPatterns #-}
+{-# LANGUAGE OverloadedStrings #-}
 module Text.Roundtrip.Xml.Printer (
 
     XmlPrinter, runXmlPrinter,
@@ -9,7 +9,6 @@ module Text.Roundtrip.Xml.Printer (
 
 ) where
 
-import Control.Monad (mplus, liftM2)
 import Control.Monad.Except
 import Control.Monad.Identity
 import Control.Exception (SomeException)
@@ -27,22 +26,23 @@ import qualified Text.XML.Stream.Render as CXR
 
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy as BSL
-
+import Data.Char (ord)
 import Data.XML.Types
 
 import Control.Isomorphism.Partial
 import Text.Roundtrip
 import Text.Roundtrip.Printer
+import Numeric (showHex)
 
 data PxEvent = XmlTypesEvent Event
              | PxBeginElement Name
-             | PxAttribute Name T.Text
+             | PxAttribute Name [Content]
                deriving (Show)
 
 -- FIXME: don't use lists for  collecting the events, this makes an inefficient
 -- monoid. Better use Data.Sequence?!
 
-newtype XmlPrinter a = XmlPrinter { unXmlPrinter :: Printer Identity [PxEvent] a }
+newtype XmlPrinter a = XmlPrinter { _unXmlPrinter :: Printer Identity [PxEvent] a }
 
 instance IsoFunctor XmlPrinter where
     iso <$> (XmlPrinter p) = XmlPrinter $ iso `printerApply` p
@@ -68,7 +68,9 @@ runXmlPrinterGen p x run render =
     case runXmlPrinter p x of
       Nothing -> Nothing
       Just l ->
-          case run $ runExceptT $ CL.sourceList l C.=$= render CXR.def C.$$ CL.consume of
+          case
+            run $ runExceptT $ C.runConduit $ CL.sourceList l C..| render CXR.def C..| CL.consume
+          of
             Left _ -> Nothing
             Right t -> Just t
 
@@ -121,9 +123,9 @@ runXmlPrinter (XmlPrinter (Printer p)) x =
       convAttrs :: [PxEvent] -> ([(Name, [Content])], [PxEvent])
       convAttrs pxes =
           case pxes of
-            PxAttribute name t : rest ->
+            PxAttribute name content : rest ->
                 let (attrs, nonAttrs) = convAttrs rest
-                in ((name, [ContentText t]) : attrs, nonAttrs)
+                in ((name, content) : attrs, nonAttrs)
             _ -> ([], pxes)
 
 instance XmlSyntax XmlPrinter where
@@ -150,10 +152,29 @@ xmlPrinterEndElem :: Name -> XmlPrinter ()
 xmlPrinterEndElem name = mkXmlPrinter $ \() -> [XmlTypesEvent (EventEndElement name)]
 
 xmlPrinterAttrValue :: Name -> XmlPrinter T.Text
-xmlPrinterAttrValue aName = mkXmlPrinter $ \value -> [(PxAttribute aName value)]
+xmlPrinterAttrValue aName = mkXmlPrinter $ \value -> [PxAttribute aName (textContent value)]
 
+-- xml-conduit fixed the handling of trailing newlines in version 1.9.1.2 by turning
+-- \r\n and \r into \n. See https://www.w3.org/TR/REC-xml/#sec-line-ends
+-- Thus, we represent certain characters as entities.
 xmlPrinterTextNotEmpty :: XmlPrinter T.Text
-xmlPrinterTextNotEmpty = mkXmlPrinter $ \value ->
-                         if T.null value
-                            then []
-                            else [XmlTypesEvent $ EventContent (ContentText value)]
+xmlPrinterTextNotEmpty =
+    mkXmlPrinter $ \value ->
+        map (XmlTypesEvent . EventContent) (textContent value)
+
+textContent :: T.Text -> [Content]
+textContent t =
+    if T.null t
+        then []
+        else let (pref, suf) = T.span needsNoEntity t
+             in if T.null pref
+                    then handleLeadingEntity suf
+                    else ContentText pref : handleLeadingEntity suf
+    where
+        entities = ['\t', '\n', '\r']
+        needsNoEntity c = c `notElem` entities
+        handleLeadingEntity t =
+            if T.null t
+                then []
+                else encodeEntity (T.head t) : textContent (T.tail t)
+        encodeEntity c = ContentEntity (T.pack ('#' : 'x' : showHex (ord c) ""))
